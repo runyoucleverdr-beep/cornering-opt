@@ -1,0 +1,13 @@
+track_half_width: 6.0
+car_width: 2.0
+num_path_points: 30
+eps_order: 1.0
+q_min: 0.01
+mu: 1.4
+g: 9.81
+a_acc_max: 5.0
+a_brake_max: 9.0
+v_in: 18.0
+s_turn_bounds: [8.0, 20.0]
+s_apex_bounds: [20.0, 38.0]
+s_exit_bounds: [38.0, 55.0]

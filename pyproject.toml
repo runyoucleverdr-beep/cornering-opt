@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cornering-opt"
+version = "0.1.0"
+description = "Single-level minimum-time cornering optimization"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy",
+  "scipy",
+  "matplotlib",
+  "pandas",
+  "pyyaml",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
