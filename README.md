@@ -4,8 +4,9 @@ Single-level minimum-time cornering optimization with a three-point parameterize
 
 ## Overview
 
-This project studies how the optimal racing line changes under different entry speeds.  
-Instead of treating the racing line as fixed, the problem is formulated as a **single-level constrained nonlinear optimization problem** in which both:
+This project studies how the optimal racing line changes under different entry speeds.
+
+Instead of treating the racing line as fixed, the cornering problem is formulated as a **single-level constrained nonlinear optimization problem** in which both:
 
 - the path geometry, and
 - the discretized speed profile
@@ -15,10 +16,10 @@ are optimized simultaneously.
 The current implementation uses:
 
 - a **three-point racing-line parameterization**
-  - turn-in point
-  - apex point
-  - exit-opening point
-- **squared speed variables** \( q_i = v_i^2 \)
+  - `turn-in point`
+  - `apex point`
+  - `exit-opening point`
+- **squared speed variables** `q_i = v_i^2`
 - a **minimum-time objective**
 - nonlinear constraints for:
   - path ordering
@@ -35,13 +36,13 @@ The solver is based on **SciPy `trust-constr`**, using an interior-point / trust
 
 ## Current Project Status
 
-The current baseline is a **Baku Turn 15-inspired segment** and successfully converges to a strictly feasible solution.
+The current baseline uses a **Baku Turn 15-inspired segment** and successfully converges to a strictly feasible solution.
 
-### Current baseline status
-- **Success:** `True`
-- **Termination:** `gtol termination condition is satisfied`
-- **Constraint violation:** `0`
-- **All diagnostics satisfied:**
+### Baseline status
+
+- `Success: True`
+- termination by `gtol`
+- zero violation in:
   - ordering
   - track width
   - friction
@@ -60,86 +61,89 @@ This means the current optimization pipeline is working end-to-end and produces 
 
 The optimization variable is:
 
-\[
-x = (s_{\text{turn}}, s_{\text{apex}}, s_{\text{exit}}, q_1, \dots, q_N)
-\]
+`x = (s_turn, s_apex, s_exit, q_1, ..., q_N)`
 
 where:
 
-- \( s_{\text{turn}} \): turn-in location
-- \( s_{\text{apex}} \): apex location
-- \( s_{\text{exit}} \): exit-opening location
-- \( q_i = v_i^2 \): squared speed at discretization point \( i \)
-
----
+- `s_turn`: turn-in location
+- `s_apex`: apex location
+- `s_exit`: exit-opening location
+- `q_i = v_i^2`: squared speed at discretization point `i`
 
 ### Objective
 
 Minimize total traversal time through the corner segment:
 
-\[
-T(x) \approx \sum_{i=1}^{N} \frac{\Delta s}{\sqrt{q_i}}
-\]
+`T(x) ~= sum_i [ Delta_s / sqrt(q_i) ]`
 
-where \( \Delta s \) is the mean path discretization step.
-
----
+where `Delta_s` is the mean path discretization step.
 
 ### Constraints
 
-The current model enforces:
+The current model includes the following constraints.
 
 #### 1. Ordering constraint
-\[
-s_{\text{turn}} + \varepsilon \le s_{\text{apex}}, \qquad
-s_{\text{apex}} + \varepsilon \le s_{\text{exit}}
-\]
+
+The three geometric points must appear in the correct order:
+
+- `s_turn + eps <= s_apex`
+- `s_apex + eps <= s_exit`
 
 #### 2. Track-width constraint
+
 The vehicle center must stay within the simplified track-width limits:
-\[
--w - \frac{W_{\text{car}}}{2} \le n_i(z) \le w + \frac{W_{\text{car}}}{2}
-\]
+
+- `-w - W_car/2 <= n_i(z) <= w + W_car/2`
+
+where:
+- `w` is the track half-width
+- `W_car` is the vehicle width
+- `n_i(z)` is the lateral offset at discretization point `i`
 
 #### 3. Curvature-based friction constraint
-\[
-q_i^2 \kappa_i(z)^2 \le (\mu g)^2
-\]
+
+- `q_i^2 * kappa_i(z)^2 <= (mu * g)^2`
+
+where:
+- `kappa_i(z)` is the path curvature at point `i`
+- `mu` is the friction coefficient
+- `g` is gravitational acceleration
 
 #### 4. Acceleration constraint
-\[
-q_{i+1} - q_i \le 2a_{\text{acc,max}} \Delta s
-\]
+
+- `q_(i+1) - q_i <= 2 * a_acc_max * Delta_s`
 
 #### 5. Braking constraint
-\[
-q_i - q_{i+1} \le 2a_{\text{brake,max}} \Delta s
-\]
+
+- `q_i - q_(i+1) <= 2 * a_brake_max * Delta_s`
 
 #### 6. Entry-speed equality
-\[
-q_1 = v_{\text{in}}^2
-\]
+
+- `q_1 = v_in^2`
 
 #### 7. Variable bounds
+
 Box bounds are imposed on:
-- \( s_{\text{turn}} \)
-- \( s_{\text{apex}} \)
-- \( s_{\text{exit}} \)
-- \( q_i \)
+- `s_turn`
+- `s_apex`
+- `s_exit`
+- `q_i`
 
 ---
 
 ## Geometry
 
-### 1. Toy corner
+### Toy corner
+
 The project was first validated on a toy corner to verify:
+
 - spline path generation
 - curvature computation
 - lateral offset computation
 - single-level constrained optimization
 
-### 2. Baku Turn 15-inspired segment
+### Baku Turn 15-inspired segment
+
 The current baseline uses a **Baku Turn 15-inspired approximation**.
 
 Important note:
@@ -148,6 +152,7 @@ Important note:
 > It is a practical approximation constructed from a hand-crafted curvature profile and public qualitative understanding of the corner.
 
 The current approximation is designed to capture:
+
 - a fast approach
 - a short rightward attitude under braking
 - a tighter left-hand braking corner
@@ -159,11 +164,11 @@ The current approximation is designed to capture:
 
 The current implementation uses:
 
-- **SciPy `trust-constr`**
-- **warm-started initial guess**
-- **curvature-based initialization of speed variables**
-- **second-stage projected warm start**
-- **boundary inset (`boundary_margin`)** to reduce spline overshoot at track edges
+- SciPy `trust-constr`
+- warm-started initial guess
+- curvature-based initialization of speed variables
+- second-stage projected warm start
+- boundary inset (`boundary_margin`) to reduce spline overshoot near track edges
 
 This combination was necessary to obtain a fully feasible baseline solution.
 
@@ -324,13 +329,13 @@ Defines:
 
 ### `src/cornering/utils/baku_t15.py`
 
-Defines the current Baku Turn 15-inspired corner segment approximation.
+Defines the current Baku Turn 15-inspired segment approximation.
 
 ---
 
-## Current Baseline Result (Reference)
+## Current Baseline Result
 
-A successful baseline run currently gives a feasible solution of the form:
+A successful baseline run currently gives a feasible solution with:
 
 * early turn-in near the lower bound
 * mid-to-late apex
@@ -344,13 +349,11 @@ This baseline should now be treated as the stable reference version for future e
 
 ## Next Step: Entry-Speed Sweep
 
-The next development stage is to run a **parameter sweep over entry speed**, for example:
+The next development stage is to run an **entry-speed sweep**, for example:
 
-[
-v_{\text{in}} \in {18, 20, 22, 24, 26}
-]
+* `v_in in {18, 20, 22, 24, 26}`
 
-and study how the optimal:
+and compare how the optimal:
 
 * turn-in location
 * apex location
@@ -364,7 +367,7 @@ change as the entry speed varies.
 
 ## Research Goal
 
-The broader research goal of this project is to study:
+The broader goal of this project is to study:
 
 > how the optimal cornering line changes with entry speed,
 
@@ -378,7 +381,4 @@ using a tractable but physically meaningful constrained optimization formulation
 * The current implementation prioritizes interpretability and solver stability over full vehicle-dynamics fidelity.
 * This is a reduced-order research prototype rather than a full motorsport simulation package.
 
----
-
 ````
-
