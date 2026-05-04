@@ -1,312 +1,520 @@
-# Modeling Information Diffusion on Twitter Using Breadth-First Search  
-### A Case Study of the SNAP Higgs Twitter Dataset
+# cornering-opt
+
+Single-level minimum-time cornering optimization with a three-point parameterized racing line.
+
+## Overview
+
+This project studies how the optimal racing line changes under different entry speeds.
+
+Instead of treating the racing line as fixed, the cornering problem is formulated as a **single-level constrained nonlinear optimization problem** in which both:
+
+- the path geometry, and
+- the discretized speed profile
+
+are optimized simultaneously.
+
+The current implementation uses:
+
+- a **three-point racing-line parameterization**
+  - `turn-in point`
+  - `apex point`
+  - `exit-opening point`
+- **squared speed variables** `q_i = v_i^2`
+- a **minimum-time objective**
+- nonlinear constraints for:
+  - path ordering
+  - track width
+  - curvature-based friction
+  - acceleration
+  - braking
+  - entry-speed equality
+  - variable bounds
+
+The solver is based on **SciPy `trust-constr`**, using an interior-point / trust-region style constrained optimization method.
 
 ---
 
-## 1. Project Overview
+## Current Project Status
 
-This project studies how scientific news spreads through a large social network using the **SNAP Higgs Twitter Dataset**. The main goal is to model the Twitter retweet network as a directed graph and apply **Breadth-First Search (BFS)** to analyze information diffusion.
+The current baseline uses a **Baku Turn 15-inspired segment** and now converges to a **strictly feasible solution**.
 
-The project focuses on three main questions:
+### Baseline status
 
-1. **How far** can information spread in the retweet network?
-2. **How deep** can a diffusion cascade extend in terms of hop count?
-3. **Which early users** are structurally positioned to trigger broader cascades?
+- `Success: True`
+- termination by `gtol`
+- zero violation in:
+  - ordering
+  - track width
+  - friction
+  - acceleration
+  - braking
+  - entry speed
+  - variable bounds
 
-The current implementation uses the **retweet layer** of the Higgs dataset and reverses the edge direction to better represent **information flow** from source users to later retweeters.
-
----
-
-## 2. Research Motivation
-
-Social media platforms are a major channel for the spread of public information. When an important scientific event occurs, information does not diffuse uniformly across the network. Some users trigger broad cascades, while others remain in small local structures.
-
-This project uses graph algorithms to measure that structural difference. Rather than treating diffusion as an abstract concept, it quantifies it using:
-
-- reachable audience size
-- propagation depth
-- shortest hop distance
+This means the optimization pipeline is working end-to-end and produces a numerically converged feasible baseline solution.
 
 ---
 
-## 3. Dataset
+## Current Main Finding
 
-This project uses the **SNAP Higgs Twitter Dataset**, which was built around Twitter activity related to the Higgs boson discovery.
+Under the current model and current Baku Turn 15-inspired approximation:
 
-### Main files used
-- `higgs-retweet_network.edgelist.gz`
-- `higgs-activity_time.txt.gz`
+- the model is reliably feasible for entry speeds roughly in the range `17-23 m/s`
+- infeasibility starts to appear at higher entry speeds such as `24 m/s` and above
+- within the successful range, the optimal geometric racing line changes very little
+- the main response to higher entry speed is **braking adaptation**, not major geometric line restructuring
 
-### Data description
-- The retweet network is modeled as a **directed graph**
-- Each node represents a Twitter user
-- Each edge represents a retweet relation
-- The activity file provides:
-  - `user_a`
-  - `user_b`
-  - `timestamp`
-  - `interaction`
+In plain English:
 
-The current project uses:
-
-- the **retweet network** for BFS traversal
-- the **activity file** to identify candidate source users
-
-### Important note on edge direction
-To analyze **information diffusion**, this project reverses the original retweet edge direction. This is because the observed retweet action and the direction of information flow are not the same.
+> the line stays almost the same, while the braking profile changes.
 
 ---
 
-## 4. Method
+## Problem Formulation
 
-### Core algorithm
-The main algorithm used in this project is **Breadth-First Search (BFS)**.
+### Decision Variables
 
-### Why BFS
-BFS is appropriate because it explores the graph level by level, which naturally matches the layered structure of information diffusion.
+The optimization variable is:
 
-### Metrics currently computed
-For each selected source user, the project computes:
+`x = (s_turn, s_apex, s_exit, q_1, ..., q_N)`
 
-- **reachable_nodes**: number of users reachable from the source
-- **reachable_ratio**: reachable nodes divided by total graph size
-- **max_depth**: maximum BFS hop level
-- **avg_distance**: average shortest-path distance to reachable nodes
-- **median_distance**: median shortest-path distance
+where:
 
-### Current source strategy
-The current experiment selects **early original-source candidates** from the retweet activity data, rather than early retweeters. This design better matches the reversed information-flow graph.
+- `s_turn`: turn-in location
+- `s_apex`: apex location
+- `s_exit`: exit-opening location
+- `q_i = v_i^2`: squared speed at discretization point `i`
+
+### Objective
+
+Minimize total traversal time through the corner segment:
+
+`T(x) ~= sum_i [ Delta_s / sqrt(q_i) ]`
+
+where `Delta_s` is the mean path discretization step.
+
+### Constraints
+
+The current model includes the following constraints.
+
+#### 1. Ordering constraint
+
+The three geometric points must appear in the correct order:
+
+- `s_turn + eps <= s_apex`
+- `s_apex + eps <= s_exit`
+
+#### 2. Track-width constraint
+
+The vehicle center must stay within the simplified track-width limits:
+
+- `-w - W_car/2 <= n_i(z) <= w + W_car/2`
+
+where:
+
+- `w` is the track half-width
+- `W_car` is the vehicle width
+- `n_i(z)` is the lateral offset at discretization point `i`
+
+#### 3. Curvature-based friction constraint
+
+- `q_i^2 * kappa_i(z)^2 <= (mu * g)^2`
+
+where:
+
+- `kappa_i(z)` is the path curvature at point `i`
+- `mu` is the friction coefficient
+- `g` is gravitational acceleration
+
+#### 4. Acceleration constraint
+
+- `q_(i+1) - q_i <= 2 * a_acc_max * Delta_s`
+
+#### 5. Braking constraint
+
+- `q_i - q_(i+1) <= 2 * a_brake_max * Delta_s`
+
+#### 6. Entry-speed equality
+
+- `q_1 = v_in^2`
+
+#### 7. Variable bounds
+
+Box bounds are imposed on:
+
+- `s_turn`
+- `s_apex`
+- `s_exit`
+- `q_i`
 
 ---
 
-## 5. Repository Structure
+## Geometry Definition
+
+The geometric racing line is not fully free.
+
+It is constructed from five control points:
+
+1. `entry_point`
+2. `turn-in point`
+3. `apex point`
+4. `exit-opening point`
+5. `exit_point`
+
+The actual optimized geometric variables are only:
+
+- `s_turn`
+- `s_apex`
+- `s_exit`
+
+These are arc-length locations along the centerline.  
+At each of these locations, the code places a control point on the appropriate inside/outside side of the track, then connects all control points with a **cubic spline**.
+
+So the current line family is:
+
+- relatively low-dimensional
+- easy to interpret
+- numerically stable
+
+but also limited in geometric flexibility.
+
+---
+
+## Geometry Cases
+
+### 1. Toy corner
+
+The project was first validated on a toy corner to verify:
+
+- spline path generation
+- curvature computation
+- lateral offset computation
+- single-level constrained optimization
+
+### 2. Baku Turn 15-inspired segment
+
+The current baseline uses a **Baku Turn 15-inspired approximation**.
+
+Important note:
+
+> This is **not** an official FIA-grade measured geometry of Baku Turn 15.  
+> It is a practical approximation constructed from a hand-crafted curvature profile and qualitative corner characteristics.
+
+The current approximation is designed to capture:
+
+- a fast approach
+- a short rightward attitude under braking
+- a tighter left-hand braking corner
+- a short unwind on exit
+
+---
+
+## Current Numerical Strategy
+
+The current implementation uses:
+
+- SciPy `trust-constr`
+- warm-started initial guess
+- curvature-based initialization of speed variables
+- second-stage projected warm start
+- boundary inset (`boundary_margin`) to reduce spline overshoot near track edges
+
+This combination was needed to obtain a fully feasible baseline solution.
+
+---
+
+## Repository Structure
 
 ```text
-higgs-diffusion-bfs/
+cornering-opt/
 ├─ README.md
+├─ pyproject.toml
 ├─ requirements.txt
 ├─ .gitignore
-├─ config/
-│  └─ default.yaml
+│
+├─ configs/
+│  └─ base.yaml
+│
 ├─ data/
 │  ├─ raw/
-│  ├─ interim/
 │  └─ processed/
-├─ outputs/
-│  ├─ figures/
-│  ├─ tables/
-│  └─ logs/
+│
+├─ docs/
 ├─ notebooks/
-│  ├─ 01_data_check.ipynb
-│  ├─ 02_graph_eda.ipynb
-│  └─ 03_bfs_results.ipynb
-├─ src/
-│  ├─ __init__.py
-│  ├─ config.py
-│  ├─ io_utils.py
-│  ├─ graph_builder.py
-│  ├─ activity_parser.py
-│  ├─ source_selection.py
-│  ├─ bfs_analysis.py
-│  ├─ metrics.py
-│  ├─ visualize.py
-│  └─ pipeline.py
+│
+├─ results/
+│  ├─ figures/
+│  ├─ logs/
+│  └─ runs/
+│
 ├─ scripts/
-│  ├─ __init__.py
-│  ├─ run_data_check.py
-│  ├─ run_bfs_experiment.py
-│  └─ run_full_pipeline.py
+│  ├─ run_toy_case.py
+│  ├─ run_baku_t15_speed_sweep.py
+│  ├─ analyze_baku_t15_speed_sweep.py
+│  └─ run_experiment.py
+│
+├─ src/
+│  └─ cornering/
+│     ├─ __init__.py
+│     ├─ geometry/
+│     │  ├─ centerline.py
+│     │  ├─ path_builder.py
+│     │  └─ curvature.py
+│     ├─ models/
+│     │  └─ config.py
+│     ├─ optimization/
+│     │  ├─ constraints.py
+│     │  ├─ objective.py
+│     │  └─ solver.py
+│     └─ utils/
+│        ├─ baku_t15.py
+│        ├─ plotting.py
+│        └─ toy_track.py
+│
 └─ tests/
-   ├─ test_graph_builder.py
-   ├─ test_bfs_analysis.py
-   └─ test_source_selection.py
+   └─ test_smoke.py
 ````
 
 ---
 
-## 6. Environment Setup
+## Installation
 
-### Recommended Python version
-
-This project is best run with **Python 3.10**.
-
-### Create environment with Conda
+### 1. Clone the repository
 
 ```bash
-conda create -n higgs-bfs python=3.10 -y
-conda activate higgs-bfs
+git clone https://github.com/<your-username>/cornering-opt.git
+cd cornering-opt
+```
+
+### 2. Create a virtual environment
+
+#### PowerShell
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+If script execution is blocked:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+```
+
+### 3. Install dependencies
+
+```powershell
 pip install -r requirements.txt
 ```
 
 ---
 
-## 7. Download the Dataset
+## How to Run
 
-The raw dataset files are **not included** in this repository.
-Please download them manually and place them in:
+### Run the current Baku Turn 15 baseline
 
-```text
-data/raw/
-```
-
-### Required files
-
-```text
-data/raw/higgs-retweet_network.edgelist.gz
-data/raw/higgs-activity_time.txt.gz
-```
-
-### Example PowerShell download commands
+From the repository root:
 
 ```powershell
-New-Item -ItemType Directory -Path .\data\raw -Force | Out-Null
-
-Invoke-WebRequest `
-  -Uri "https://snap.stanford.edu/data/higgs-retweet_network.edgelist.gz" `
-  -OutFile ".\data\raw\higgs-retweet_network.edgelist.gz"
-
-Invoke-WebRequest `
-  -Uri "https://snap.stanford.edu/data/higgs-activity_time.txt.gz" `
-  -OutFile ".\data\raw\higgs-activity_time.txt.gz"
+$env:PYTHONPATH = ".\src"
+python .\scripts\run_toy_case.py
 ```
 
+Note: `run_toy_case.py` currently runs the **Baku Turn 15-inspired case**, even though the filename still reflects the earlier toy-corner stage.
+
+This baseline run outputs:
+
+* optimizer termination status
+* objective value
+* optimized geometric parameters
+* constraint diagnostics
+* optimized racing-line plot
+* curvature profile
+* speed profile
+
 ---
 
-## 8. Configuration
+### Run the entry-speed sweep
 
-The main configuration file is:
-
-```text
-config/default.yaml
+```powershell
+$env:PYTHONPATH = ".\src"
+python .\scripts\run_baku_t15_speed_sweep.py
 ```
 
-Example:
+This sweep saves:
 
-```yaml
-paths:
-  retweet_network: data/raw/higgs-retweet_network.edgelist.gz
-  activity_file: data/raw/higgs-activity_time.txt.gz
-  output_tables: outputs/tables
-  output_figures: outputs/figures
+* per-case summary data
+* per-case path and speed profile data
+* figures for each case
+* a summary CSV in `results/runs/`
 
-experiment:
-  num_early_users: 10
-  num_random_users: 10
-  random_seed: 42
+---
 
-graph:
-  reverse_for_information_flow: true
+### Analyze the sweep results
 
-plot:
-  top_k_sources: 10
+```powershell
+$env:PYTHONPATH = ".\src"
+python .\scripts\analyze_baku_t15_speed_sweep.py
 ```
 
----
+This analysis script generates:
 
-## 9. How to Run
-
-### Step 1: Data check
-
-This verifies that the retweet network and activity file can be loaded correctly.
-
-```bash
-python scripts/run_data_check.py
-```
-
-### Step 2: Run BFS experiment
-
-This runs the current diffusion analysis pipeline.
-
-```bash
-python scripts/run_bfs_experiment.py
-```
-
-### Step 3: Full pipeline
-
-Currently equivalent to the BFS experiment script.
-
-```bash
-python scripts/run_full_pipeline.py
-```
+* objective vs entry speed
+* geometric line parameters vs entry speed
+* minimum speed vs entry speed
+* constraint violations vs entry speed
+* path overlay across successful runs
+* speed profile overlay across successful runs
 
 ---
 
-## 10. Outputs
+## Main Code Components
 
-After running the BFS experiment, the following files are generated:
+### `src/cornering/models/config.py`
 
-### Tables
+Defines the configuration dataclass for:
 
-* `outputs/tables/bfs_source_summary.csv`
+* geometry
+* discretization
+* physical parameters
+* variable bounds
 
-### Figures
+### `src/cornering/geometry/path_builder.py`
 
-* `outputs/figures/top_sources_reach.png`
-* `outputs/figures/top_sources_depth.png`
-* `outputs/figures/representative_bfs_levels.png`
+Responsible for:
 
----
+* centerline interpolation
+* control-point generation
+* spline path construction
+* curvature computation
+* lateral offset computation
+* path feasibility checks
 
-## 11. Current Progress
+### `src/cornering/optimization/objective.py`
 
-The current version of the project already supports:
+Defines:
 
-* loading the Higgs retweet graph
-* reversing edge direction for information-flow analysis
-* parsing the activity file
-* selecting early source candidates
-* running BFS from multiple source nodes
-* computing diffusion metrics
-* exporting tables and figures
+* decision-vector unpacking
+* minimum-time objective evaluation
 
-Initial results show that diffusion reach differs dramatically across source users. Some source nodes can reach only a few users, while others can reach tens of thousands of nodes. This suggests that **structural position in the graph strongly affects diffusion potential**.
+### `src/cornering/optimization/constraints.py`
 
----
+Defines:
 
-## 12. Current Interpretation
+* nonlinear constraint functions
+* bounds
+* diagnostics for each constraint type
 
-The first meaningful experiment shows that:
+### `src/cornering/optimization/solver.py`
 
-* not all early users trigger large diffusion cascades
-* structurally favorable users can reach a very large portion of the retweet graph
-* several source users appear to belong to the same large reachable diffusion region
+Defines:
 
-This supports the central project claim that **diffusion is shaped not only by timing, but also by graph structure**.
+* initial guess generation
+* warm-start logic
+* second-stage projected warm start
+* `trust-constr` solve routine
 
----
+### `src/cornering/utils/baku_t15.py`
 
-## 13. Planned Next Steps
-
-The next development stage will add:
-
-* comparison across different source-selection strategies
-
-  * earliest original sources
-  * top out-degree users
-  * random users
-* stronger baseline analysis
-* more detailed graph diagnostics
-* improved visualizations for report writing
-
-Possible future extensions include:
-
-* time-window analysis
-* comparison across retweet / reply / mention layers
-* runtime analysis across different source sets
+Defines the current Baku Turn 15-inspired segment approximation.
 
 ---
 
-## 14. Notes
+## Current Results Summary
 
-* Raw data files are excluded from version control.
-* Generated figures and tables are also excluded from Git.
-* The current BFS analysis is **unweighted**. If edge weights are incorporated later, the project may be extended to weighted diffusion analysis.
+### Feasible range
+
+At the moment, the model is reliably feasible for entry speeds approximately in the range:
+
+* `17-23 m/s`
+
+### Infeasible range
+
+For higher entry speeds such as:
+
+* `24 m/s`
+* `26 m/s`
+
+the current setup becomes infeasible, mainly due to:
+
+* braking constraint violation
+* friction constraint violation
+* some bounds violation
+
+This suggests that, under the current geometry and physical assumptions, the model reaches the feasible operating limit of the corner.
+
+### Interpretation
+
+Within the successful entry-speed range:
+
+* the optimal geometric line is almost unchanged
+* the speed profiles differ mainly in the approach phase
+* the curves then converge to a very similar minimum-speed region through the main corner
+
+This suggests that the current model responds to higher entry speeds mainly through:
+
+* **different braking behavior**
+
+rather than through:
+
+* **substantial geometric restructuring of the racing line**
 
 ---
 
-## 15. License / Academic Use
+## Limitations
 
-This repository is intended for academic course-project use.
-Please check the original dataset source for data usage conditions.
+The current implementation is intentionally simplified.
+
+Main limitations include:
+
+* the Baku Turn 15 geometry is only an approximation
+* the racing line is parameterized by only three geometric variables
+* the line family may therefore be too rigid to show richer geometric adaptation
+* current results are based on a reduced-order path-and-speed model, not a full vehicle dynamics simulator
+
+---
+
+## Next Steps
+
+The next development stage can go in either of two directions.
+
+### Direction 1: Result consolidation
+
+Use the current baseline and sweep results to write up:
+
+* modeling setup
+* numerical method
+* feasible speed range
+* geometric stability of the optimal line
+* braking-dominated adaptation behavior
+
+### Direction 2: Model extension
+
+If stronger geometric line variation is desired, possible extensions include:
+
+* wider geometric bounds
+* more spline control points
+* direct optimization of lateral offset profiles
+* improved corner geometry approximation
+* richer vehicle dynamics
+
+---
+
+## Research Goal
+
+The broader goal of this project is to study:
+
+> how the optimal cornering line changes with entry speed,
+
+using a tractable but physically meaningful constrained optimization formulation.
+
+---
+
+## Notes
+
+* The Baku Turn 15 geometry used here is an approximation, not official track-survey data.
+* The current implementation prioritizes interpretability and solver stability over full vehicle-dynamics fidelity.
+* This is a reduced-order research prototype rather than a full motorsport simulation package.
 
 ````
+
